@@ -1,32 +1,52 @@
 <?php
 require_once '../config/database.php';
+ob_start();
 
-ob_start(); // <-- Importante para evitar envío prematuro de headers
+// 1. Cargar tabla de rutas limpias
+$routes = require_once '../app/routes.php';
 
-$url = isset($_GET['url']) ? $_GET['url'] : 'home/index';
-$url = explode('/', filter_var(rtrim($url, '/'), FILTER_SANITIZE_URL));
+// 2. Detectar ruta limpia o ?url=...
+$uri = $_GET['url'] ?? ''; // soporte actual
+$uri = $uri === '' ? '/' : '/' . trim($uri, '/'); // convertir en ruta tipo "/login"
 
-$controllerName = ucfirst($url[0]) . 'Controller';
-$methodName = $url[1] ?? 'index';
+// Normaliza con FILTER_SANITIZE_URL
+$uri = explode('?', filter_var($uri, FILTER_SANITIZE_URL))[0];
 
-$controllerFile = __DIR__ . '/../app/controllers/' . $controllerName . '.php';
-
-if (file_exists($controllerFile)) {
-    require_once $controllerFile;
-
-    if (class_exists($controllerName)) {
-        $controller = new $controllerName();
-
-        if (method_exists($controller, $methodName)) {
-            $controller->{$methodName}();
-        } else {
-            echo "Método '$methodName' no encontrado.";
-        }
-    } else {
-        echo "Clase '$controllerName' no encontrada en el archivo.";
-    }
+// 3. Buscar en el array de rutas
+if (isset($routes[$uri])) {
+    [$controllerName, $methodName] = $routes[$uri];
 } else {
-    echo "Controlador '$controllerName' no encontrado.";
+    // fallback: tratar como controlador/metodo en URL (?url=controlador/metodo)
+    $parts = explode('/', ltrim($uri, '/'));
+    $controllerName = ucfirst($parts[0] ?? 'home') . 'Controller';
+    $methodName = $parts[1] ?? 'index';
 }
 
-ob_end_flush(); // <-- Al final, libera la salida almacenada
+// 4. Cargar controlador
+$controllerFile = __DIR__ . '/../app/controllers/' . $controllerName . '.php';
+
+if (!file_exists($controllerFile)) {
+    echo "Controlador '$controllerName' no encontrado.";
+    ob_end_flush();
+    exit;
+}
+
+require_once $controllerFile;
+
+if (!class_exists($controllerName)) {
+    echo "Clase '$controllerName' no encontrada en el archivo.";
+    ob_end_flush();
+    exit;
+}
+
+$controller = new $controllerName();
+
+if (!method_exists($controller, $methodName)) {
+    echo "Método '$methodName' no encontrado en '$controllerName'.";
+    ob_end_flush();
+    exit;
+}
+
+// 5. Ejecutar
+$controller->{$methodName}();
+ob_end_flush();

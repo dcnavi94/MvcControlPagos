@@ -1,15 +1,15 @@
-
-
-
 document.addEventListener('DOMContentLoaded', function () {
     const tabla = document.getElementById('tablaUsuarios');
     if (!tabla) return;
 
-    // Si ya existe una instancia de DataTable, destrúyela
+    console.log("usuarios.js cargado ✅");
+
+    // Destruir instancia previa si existe
     if ($.fn.DataTable.isDataTable('#tablaUsuarios')) {
         $('#tablaUsuarios').DataTable().clear().destroy();
     }
 
+    // Inicialización de DataTable
     const table = $('#tablaUsuarios').DataTable({
         pageLength: 15,
         lengthChange: false,
@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', function () {
         buttons: [
             {
                 extend: 'excelHtml5',
-                className: 'd-none', // Ocultar botón nativo
+                className: 'd-none',
                 title: 'Usuarios',
                 exportOptions: { columns: [0, 1, 2, 3, 4, 5, 6] }
             },
@@ -35,29 +35,44 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // Botones personalizados para exportar
-    document.getElementById('btnExportarExcel')?.addEventListener('click', () => table.button(0).trigger());
-    document.getElementById('btnExportarPDF')?.addEventListener('click', () => table.button(1).trigger());
-
-    // Filtros personalizados
-    function aplicarFiltros() {
-        const role = document.getElementById('roleFilter')?.value || '';
-        const career = document.getElementById('careerFilter')?.value || '';
-        const group = document.getElementById('groupFilter')?.value || '';
-        const search = document.getElementById('searchInput')?.value || '';
-    
-        table.column(3).search(role);
-        table.column(4).search(career);
-        table.column(6).search(group);  // <- Filtro de grupo por nombre (ej. 2501)
-        table.search(search).draw();
-    }
-    
-
-    // Eventos para los filtros
-    ['roleFilter', 'careerFilter', 'groupFilter'].forEach(id => {
-        document.getElementById(id)?.addEventListener('change', aplicarFiltros);
+    // Exportación personalizada
+    document.getElementById('btnExportarExcel')?.addEventListener('click', () => {
+        table.button(0).trigger();
     });
 
-    document.getElementById('searchInput')?.addEventListener('keyup', aplicarFiltros);
-});
+    document.getElementById('btnExportarPDF')?.addEventListener('click', () => {
+        table.button(1).trigger();
+    });
 
+    // Función de filtrado personalizada
+    function aplicarFiltros() {
+        const role = document.getElementById('roleFilter')?.value.trim() || '';
+        const career = document.getElementById('careerFilter')?.value.trim() || '';
+        const group = document.getElementById('groupFilter')?.value.trim() || '';
+        const search = document.getElementById('searchInput')?.value.trim() || '';
+
+        // Aplicar búsquedas exactas por columna (usando regex)
+        table.column(3).search(role ? `^${role}$` : '', true, false);   // Rol
+        table.column(4).search(career ? `^${career}$` : '', true, false); // Carrera
+        table.column(6).search(group ? `^${group}$` : '', true, false);  // Grupo
+
+        // Búsqueda global (nombre o email)
+        table.search(search).draw();
+    }
+
+    // Listeners para filtros
+    ['roleFilter', 'careerFilter', 'groupFilter'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('change', () => {
+                console.log(`Filtro ${id} aplicado`);
+                aplicarFiltros();
+            });
+        }
+    });
+
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', aplicarFiltros);
+    }
+});

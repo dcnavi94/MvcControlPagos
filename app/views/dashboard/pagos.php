@@ -38,13 +38,6 @@ ob_start();
             <option value="pagado">pagado</option>
         </select>
     </div>
-    <div class="col-md-3">
-    <label for="fechaFilter" class="form-label">Fecha (MM/AAAA):</label>
-    <input type="month" id="fechaFilter" class="form-control">
-
-
-
-</div>
 
 
     <div class="col-md-3">

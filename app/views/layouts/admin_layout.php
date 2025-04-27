@@ -72,6 +72,7 @@ if (session_status() === PHP_SESSION_NONE) session_start();
                     <li><a class="dropdown-item" href="/dashboard/admin">Dashboard</a></li>
                     <li><a class="dropdown-item" href="/dashboard/usuarios">Usuarios</a></li>
                     <li><a class="dropdown-item" href="/dashboard/pagos">Pagos</a></li>
+                    <li><a class="dropdown-item" href="/dashboard/reportes">Reportes</a></li>
                 </ul>
             </div>
 
@@ -123,7 +124,14 @@ if (session_status() === PHP_SESSION_NONE) session_start();
                             <div class="d-flex align-items-center"><i class="feather feather-credit-card"></i><span class="menu-text ms-2">Pagos</span></div>
                         </a>
                     </li>
+                    <li class="menu">
+                        <a href="/dashboard/reportes" class="dropdown-toggle">
+                            <div class="d-flex align-items-center"><i class="feather feather-credit-card"></i><span class="menu-text ms-2">Reportes</span></div>
+                        </a>
+                    </li>
                 </ul>
+              
+                    
             </nav>
         </div>
 

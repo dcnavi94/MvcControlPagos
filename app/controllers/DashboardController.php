@@ -1,10 +1,25 @@
 <?php
 // Ajustar la ruta a la base de datos
 require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../models/PagoModel.php'; // 👈 OBLIGATORIO: antes de usar PagoModel
+
+
 
 
 class DashboardController
 {
+    public function index() {
+        $pagoModel = new PagoModel();
+
+        // Capturamos el mes seleccionado o usamos el actual
+        $mes = isset($_GET['mes']) ? (int) $_GET['mes'] : date('n'); // 'n' => número de mes sin ceros
+
+        $montoPagadoMes = $pagoModel->obtenerTotalPagosRealizadosMes($mes);
+        $montoPendienteMes = $pagoModel->obtenerTotalPagosPendientesMes($mes);
+
+        require __DIR__ . '/../views/dashboard/admin.php';
+    }
+
     public function admin()
     {
         session_start();
@@ -345,6 +360,11 @@ public function editarPago()
         } catch (Exception $e) {
             echo json_encode(['success' => false, 'message' => 'Error al actualizar: ' . $e->getMessage()]);
         }
+    }
+    
+    public function reportes()
+    {
+        require_once __DIR__ . '/../views/dashboard/reportes.php';
     }
     
 }
