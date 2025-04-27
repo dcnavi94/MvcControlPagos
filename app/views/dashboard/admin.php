@@ -5,11 +5,12 @@ ob_start();
 
 <div class="container py-4">
     <h2 class="text-white mb-4">Dashboard - Estadísticas por Mes</h2>
-<!-- Selector de Mes -->
+<!-- Filtro de Mes y Grupo -->
 <form method="GET" action="/dashboard/admin" class="mb-4">
-    <div class="row">
-        <div class="col-md-4">
-            <select name="mes" class="form-select" onchange="this.form.submit()">
+    <div class="row g-3">
+        <div class="col-md-3">
+            <label for="mes" class="form-label text-white">Mes</label>
+            <select name="mes" id="mes" class="form-select" onchange="this.form.submit()">
                 <?php for ($i = 1; $i <= 12; $i++): ?>
                     <?php
                     $monthName = (new DateTime("2025-$i-01"))->format('F');
@@ -20,8 +21,21 @@ ob_start();
                 <?php endfor; ?>
             </select>
         </div>
+
+        <div class="col-md-6">
+            <label for="grupo" class="form-label text-white">Grupos</label>
+            <select name="grupos[]" id="grupo" class="form-select" multiple onchange="this.form.submit()">
+                <?php foreach ($grupos as $grupo): ?>
+                    <option value="<?= $grupo['id'] ?>" <?= (isset($_GET['grupos']) && in_array($grupo['id'], (array)$_GET['grupos'])) ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($grupo['name']) ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <small class="text-white">Mantén Ctrl (o Cmd) para seleccionar varios.</small>
+        </div>
     </div>
 </form>
+
 
 
     <div class="row">

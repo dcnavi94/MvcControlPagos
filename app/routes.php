@@ -33,6 +33,7 @@ return [
     // 📊 Reportes
     '/dashboard/reportes'       => ['DashboardController', 'reportes'],
     '/dashboard/generarReporte' => ['ReporteController', 'generar'],
+    '/dashboard/generar-reporte' => ['DashboardController', 'generarReporte'],
 
     // 💵 Pagos (admin o tesorería)
     '/dashboard/pagos'              => ['DashboardController', 'pagos'],

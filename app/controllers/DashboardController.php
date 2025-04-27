@@ -1,24 +1,41 @@
 <?php
 // Ajustar la ruta a la base de datos
+require_once __DIR__ . '/../libs/dompdf/autoload.inc.php'; // Ruta a tu carpeta dompdf
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../models/PagoModel.php'; // 👈 OBLIGATORIO: antes de usar PagoModel
 
+use Dompdf\Dompdf;
+use Dompdf\Options;
+
+
+
+
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 
 
 class DashboardController
 {
     public function index() {
+        session_start();
+        require_once __DIR__ . '/../models/PagoModel.php';
+        require_once __DIR__ . '/../models/GrupoModel.php'; // Para traer grupos disponibles
+    
         $pagoModel = new PagoModel();
-
-        // Capturamos el mes seleccionado o usamos el actual
-        $mes = isset($_GET['mes']) ? (int) $_GET['mes'] : date('n'); // 'n' => número de mes sin ceros
-
-        $montoPagadoMes = $pagoModel->obtenerTotalPagosRealizadosMes($mes);
-        $montoPendienteMes = $pagoModel->obtenerTotalPagosPendientesMes($mes);
-
-        require __DIR__ . '/../views/dashboard/admin.php';
+        $grupoModel = new GrupoModel();
+    
+        $mesSeleccionado = isset($_GET['mes']) ? (int)$_GET['mes'] : date('n');
+        $gruposSeleccionados = isset($_GET['grupos']) ? array_map('intval', (array)$_GET['grupos']) : [];
+    
+        $montoPagadoMes = $pagoModel->sumarPagosPorEstadoYMES('pagado', $mesSeleccionado, $gruposSeleccionados);
+        $montoPendienteMes = $pagoModel->sumarPagosPorEstadoYMES('pendiente', $mesSeleccionado, $gruposSeleccionados);
+    
+        $grupos = $grupoModel->obtenerTodos();
+    
+        require_once __DIR__ . '/../views/dashboard/admin.php';
     }
+    
 
     public function admin()
     {
@@ -363,8 +380,265 @@ public function editarPago()
     }
     
     public function reportes()
-    {
-        require_once __DIR__ . '/../views/dashboard/reportes.php';
+{
+    session_start();
+    require_once __DIR__ . '/../models/GrupoModel.php';
+
+    $grupoModel = new GrupoModel();
+    $grupos = $grupoModel->obtenerTodos(); // <-- ¡Esto es obligatorio!
+
+    require_once __DIR__ . '/../views/dashboard/reportes.php';
+}
+    
+public function generarReporte()
+{
+    session_start();
+    global $pdo;
+
+
+    $options = new Options();
+    $options->set('isHtml5ParserEnabled', true);
+    $options->set('isRemoteEnabled', true);
+
+    $dompdf = new Dompdf($options);
+
+    $mes = isset($_GET['mes']) ? (int)$_GET['mes'] : date('n');
+    $anio = date('Y');
+    $metodopago = isset($_GET['metodopago']) ? trim($_GET['metodopago']) : '';
+    $gruposSeleccionados = isset($_GET['grupos']) ? array_map('intval', (array)$_GET['grupos']) : [];
+
+    $params = [$mes, $anio];
+
+    $sql = "
+        SELECT 
+            p.amount,
+            p.payment_date,
+            p.status,
+            p.type,
+            p.metodopago,
+            u.name AS alumno,
+            g.name AS grupo
+        FROM payments p
+        INNER JOIN users u ON p.user_id = u.id
+        LEFT JOIN grupo g ON u.group_id = g.id
+        WHERE MONTH(p.payment_date) = ?
+          AND YEAR(p.payment_date) = ?
+    ";
+
+    if (!empty($metodopago)) {
+        $sql .= " AND p.metodopago = ?";
+        $params[] = $metodopago;
     }
+
+    if (!empty($gruposSeleccionados)) {
+        $placeholders = implode(',', array_fill(0, count($gruposSeleccionados), '?'));
+        $sql .= " AND u.group_id IN ($placeholders)";
+        $params = array_merge($params, $gruposSeleccionados);
+    }
+
+    $sql .= " ORDER BY g.name, p.payment_date";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $pagos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($pagos)) {
+        echo "<h2 style='color:red; text-align:center;'>⚠️ No se encontraron pagos para los filtros seleccionados.</h2>";
+        exit;
+    }
+
+    // --- Procesar datos ---
+    $pagosAntes7 = [];
+    $pagosDespues7 = [];
+    $totalAntes7 = 0;
+    $totalDespues7 = 0;
+    $pagosPorEstado = ['pagado' => 0, 'pendiente' => 0];
+    $pagosPorTipoPagado = [];
+    $pagosPorTipoPendiente = [];
+    $pagosPorMetodo = [];
+
+    foreach ($pagos as $pago) {
+        $diaPago = (int)date('d', strtotime($pago['payment_date']));
+
+        if ($diaPago <= 7) {
+            $pagosAntes7[] = $pago;
+            $totalAntes7 += $pago['amount'];
+        } else {
+            $pagosDespues7[] = $pago;
+            $totalDespues7 += $pago['amount'];
+        }
+
+        $estado = $pago['status'];
+        $pagosPorEstado[$estado] += $pago['amount'];
+
+        if (!empty($pago['type'])) {
+            if ($estado === 'pagado') {
+                $pagosPorTipoPagado[$pago['type']] = ($pagosPorTipoPagado[$pago['type']] ?? 0) + $pago['amount'];
+            } else {
+                $pagosPorTipoPendiente[$pago['type']] = ($pagosPorTipoPendiente[$pago['type']] ?? 0) + $pago['amount'];
+            }
+        }
+
+        if (!empty($pago['metodopago'])) {
+            $pagosPorMetodo[$pago['metodopago']] = ($pagosPorMetodo[$pago['metodopago']] ?? 0) + $pago['amount'];
+        }
+    }
+
+    $fecha = DateTime::createFromFormat('!m', $mes);
+    $nombreMes = $fecha->format('F');
+
+    ob_start();
+?>
+<style>
+    body { font-family: Arial, sans-serif; }
+    h1, h2, h3 { text-align: center; }
+    table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+    th, td { border: 1px solid #000; padding: 5px; font-size: 12px; }
+    thead { background: #003366; color: white; }
+    .pendiente { color: #f39c12; font-weight: bold; }
+</style>
+
+<div style="text-align: center; margin-bottom: 20px;">
+    <img src="http://localhost/images/logo_unives.png" alt="Logo" style="width:80px;">
+    <h1>Ciencias Artes y Metaeducación San José</h1>
+    <h2>Reporte del Mes de <?= htmlspecialchars($nombreMes . ' ' . $anio) ?></h2>
+</div>
+
+<p style="text-align: center;">Fecha de generación: <?= date('d/m/Y') ?></p>
+
+<h3>Pagos del 1 al 7</h3>
+<?= $this->tablaPagos($pagosAntes7, $totalAntes7) ?>
+
+<h3>Pagos del 8 en adelante</h3>
+<?= $this->tablaPagos($pagosDespues7, $totalDespues7) ?>
+
+<h2 style="text-align:center;">💵 Gran Total: $<?= number_format($totalAntes7 + $totalDespues7, 2) ?></h2>
+
+<div style="page-break-before: always;"></div>
+
+<h2>Resumen de Estado de Pagos</h2>
+
+<table>
+    <thead>
+        <tr><th>Estado</th><th>Total</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>Pagado</td><td>$<?= number_format($pagosPorEstado['pagado'], 2) ?></td></tr>
+        <tr><td class="pendiente">Pendiente</td><td class="pendiente">$<?= number_format($pagosPorEstado['pendiente'], 2) ?></td></tr>
+    </tbody>
+</table>
+
+<h3>Totales por Tipo de Pago (Pagados)</h3>
+<?= $this->tablaResumen($pagosPorTipoPagado) ?>
+
+<h3>Totales por Tipo de Pago (Pendientes)</h3>
+<?= $this->tablaResumen($pagosPorTipoPendiente) ?>
+
+<h3>Totales por Método de Pago</h3>
+<?= $this->tablaResumen($pagosPorMetodo) ?>
+
+<?php
+    $html = ob_get_clean();
+
+    $dompdf->loadHtml($html);
+    $dompdf->setPaper('A4', 'portrait');
+    $dompdf->render();
+
+    $canvas = $dompdf->getCanvas();
+    
+
+   
+    $canvas->page_text(500, 820, "Página {PAGE_NUM} de {PAGE_COUNT}", null, 10, array(0, 0, 0));
+
+    $dompdf->stream('reporte_' . strtolower($nombreMes) . '_' . $anio . '.pdf', ['Attachment' => false]);
+}
+private function tablaPagos($pagos, $total)
+{
+    if (empty($pagos)) {
+        return "<p style='text-align:center;'>No hay registros en esta categoría.</p>";
+    }
+
+    $totalPagados = 0;
+    $totalPendientes = 0;
+
+    foreach ($pagos as $pago) {
+        if ($pago['status'] === 'pagado') {
+            $totalPagados += $pago['amount'];
+        } else {
+            $totalPendientes += $pago['amount'];
+        }
+    }
+
+    ob_start();
+?>
+<table>
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Alumno</th>
+            <th>Fecha</th>
+            <th>Monto</th>
+            <th>Tipo</th>
+            <th>Método</th>
+            <th>Estado</th>
+            <th>Grupo</th>
+        </tr>
+    </thead>
+    <tbody>
+        <?php foreach ($pagos as $i => $pago): ?>
+        <tr>
+            <td><?= $i + 1 ?></td>
+            <td><?= htmlspecialchars($pago['alumno']) ?></td>
+            <td><?= date('d/m/Y', strtotime($pago['payment_date'])) ?></td>
+            <td>$<?= number_format($pago['amount'], 2) ?></td>
+            <td><?= htmlspecialchars($pago['type']) ?></td>
+            <td><?= htmlspecialchars($pago['metodopago']) ?></td>
+            <td class="<?= $pago['status'] === 'pendiente' ? 'pendiente' : '' ?>">
+                <?= ucfirst($pago['status']) ?>
+            </td>
+            <td><?= htmlspecialchars($pago['grupo'] ?? 'Sin Grupo') ?></td>
+        </tr>
+        <?php endforeach; ?>
+    </tbody>
+</table>
+
+<!-- Resumen debajo -->
+<div style="text-align:center; margin-top:10px;">
+    <strong>Total sección:</strong> $<?= number_format($total, 2) ?><br>
+    <span style="color:green;"><strong>✔️ Total Pagados:</strong> $<?= number_format($totalPagados, 2) ?></span><br>
+    <span style="color:orange;"><strong>⚠️ Total Pendientes:</strong> $<?= number_format($totalPendientes, 2) ?></span>
+</div>
+<?php
+    return ob_get_clean();
+}
+private function tablaResumen($data)
+{
+    if (empty($data)) {
+        return "<p style='text-align:center;'>No hay datos disponibles.</p>";
+    }
+
+    ob_start();
+?>
+<table>
+    <thead>
+        <tr><th>Concepto</th><th>Total</th></tr>
+    </thead>
+    <tbody>
+        <?php foreach ($data as $concepto => $monto): ?>
+        <tr>
+            <td><?= htmlspecialchars($concepto) ?></td>
+            <td>$<?= number_format($monto, 2) ?></td>
+        </tr>
+        <?php endforeach; ?>
+    </tbody>
+</table>
+<?php
+    return ob_get_clean();
+}
+
+
+
+    
+
     
 }
